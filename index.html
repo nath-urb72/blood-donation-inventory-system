@@ -1,0 +1,1183 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Blood Bank</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Atkinson+Hyperlegible:wght@400;700&display=swap" rel="stylesheet">
+
+    <script>
+    /* Saved theme + accessibility settings, applied before first paint (no flash) */
+    window.BBPrefs = (function () {
+      var KEY = "bb-a11y", SIZES = [100, 115, 130, 150];
+      function load() {
+        var saved = {};
+        try { saved = JSON.parse(localStorage.getItem(KEY)) || {}; } catch (e) {}
+        var o = Object.assign({ theme: null, size: 0, contrast: false, font: false, spacing: false, links: false, focus: false, motion: false }, saved);
+        if (!o.theme) o.theme = (window.matchMedia && matchMedia("(prefers-color-scheme: dark)").matches) ? "dark" : "light";
+        return o;
+      }
+      function save(o) { try { localStorage.setItem(KEY, JSON.stringify(o)); } catch (e) {} }
+      function clear() { try { localStorage.removeItem(KEY); } catch (e) {} }
+      function apply(o) {
+        var h = document.documentElement;
+        function flag(n, on, v) { if (on) h.setAttribute("data-" + n, v); else h.removeAttribute("data-" + n); }
+        h.setAttribute("data-theme", o.theme);
+        flag("contrast", o.contrast, "high"); flag("font", o.font, "readable"); flag("spacing", o.spacing, "wide");
+        flag("links", o.links, "on"); flag("focus", o.focus, "strong"); flag("motion", o.motion, "reduce");
+        h.style.fontSize = SIZES[o.size] + "%";
+      }
+      var api = { load: load, save: save, clear: clear, apply: apply, SIZES: SIZES };
+      apply(load());
+      return api;
+    })();
+    </script>
+
+    <script>
+    /* Login state (lasts until the tab is closed) */
+    (function () {
+      var ok = false;
+      try { ok = sessionStorage.getItem("bb-auth") === "1"; } catch (e) {}
+      document.documentElement.setAttribute("data-auth", ok ? "in" : "out");
+    })();
+    </script>
+
+    <style>
+    /* ============ THEME (edit colors here) ============ */
+    :root {
+      --bg: #FAF3F3;          /* page background (warm blush) */
+      --surface: #FFFFFF;     /* cards + navbar */
+      --ink: #2A1518;         /* headings / main text */
+      --muted: #76595E;       /* secondary text */
+      --line: #EBD8DA;        /* borders */
+      --blue: #C8263B;        /* primary accent (blood red) - variable name kept */
+      --blue-dark: #A11A2D;
+      --blue-soft: #FCE6E9;   /* light red tint */
+      --gold: #D98E04; --gold-dark: #8A5A00;     /* plasma */
+      --teal: #168F7E; --teal-dark: #0E6B5D;     /* platelets */
+      --on-blue: #FFFFFF;     /* text on blue buttons */
+      --dash: #E0B0B6;
+      --field-border: #D9BFC3;
+      --ok: #1A7F4B; --warn: #B26A00; --danger: #B42318; --danger-soft: #FDECEA;
+      --bar-low: #7FA9EE;
+      --track-off: #9C8A8D;
+      --radius: 20px;
+      --font: "Manrope", "Segoe UI", system-ui, -apple-system, Arial, sans-serif;
+    }
+
+    /* ============ DARK THEME ============ */
+    :root { color-scheme: light; }
+    :root[data-theme="dark"] {
+      color-scheme: dark;
+      --bg: #1A1012; --surface: #26171A; --ink: #F8EEEF; --muted: #C9ADB1; --line: #432C30;
+      --blue: #F0586B; --blue-dark: #FF9DA9; --blue-soft: #3D1F25; --on-blue: #1A0A0C;
+      --gold: #F2B84B; --gold-dark: #FFD98A; --teal: #3FBFA9; --teal-dark: #8FE8D8;
+      --dash: #7C4C54; --field-border: #5E4246;
+      --ok: #4CC38A; --warn: #F0A63A; --danger: #FF8A80; --danger-soft: #3A1E22; --bar-low: #3E6CB8; --track-off: #8A7478;
+    }
+    /* ============ HIGH CONTRAST ============ */
+    :root[data-contrast="high"] {
+      --bg: #FFFFFF; --surface: #FFFFFF; --ink: #000000; --muted: #1A1A1A; --line: #000000;
+      --blue: #A00F24; --blue-dark: #7A0A1A; --blue-soft: #FFE3E6; --on-blue: #FFFFFF;
+      --gold: #8A5A00; --gold-dark: #5E3D00; --teal: #0B5E52; --teal-dark: #07433B;
+      --dash: #000000; --field-border: #000000;
+      --ok: #004D24; --warn: #6B3500; --danger: #8A0000; --danger-soft: #FFE5E5; --bar-low: #5B7FC7;
+    }
+    :root[data-theme="dark"][data-contrast="high"] {
+      --bg: #000000; --surface: #000000; --ink: #FFFFFF; --muted: #F2F2F2; --line: #FFFFFF;
+      --blue: #FF8A98; --blue-dark: #FFC4CB; --blue-soft: #33090F; --on-blue: #000000;
+      --gold: #FFC95C; --gold-dark: #FFE0A3; --teal: #6FE3CE; --teal-dark: #B5F3E8;
+      --dash: #FFFFFF; --field-border: #FFFFFF;
+      --ok: #6BE6A6; --warn: #FFC15C; --danger: #FF9C94; --danger-soft: #3A0D0D; --bar-low: #5A8FE0;
+    }
+    :root[data-contrast="high"] .card, :root[data-contrast="high"] .navbar,
+    :root[data-contrast="high"] .a11y-panel, :root[data-contrast="high"] .entry-dialog { border-width: 2px; }
+
+    /* ============ OTHER ACCESSIBILITY OPTIONS ============ */
+    :root[data-font="readable"] { --font: "Atkinson Hyperlegible", Verdana, Tahoma, system-ui, sans-serif; }
+    :root[data-spacing="wide"] body { line-height: 1.9; letter-spacing: .03em; word-spacing: .12em; }
+    :root[data-links="on"] a { text-decoration: underline !important; text-underline-offset: 3px; }
+    :root[data-focus="strong"] :focus-visible { outline: 4px solid #FFB000; outline-offset: 3px; box-shadow: 0 0 0 7px #000; }
+    :root[data-motion="reduce"] *, :root[data-motion="reduce"] *::before, :root[data-motion="reduce"] *::after {
+      transition: none !important; animation: none !important; scroll-behavior: auto !important;
+    }
+    @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
+    .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+    .skip-link {
+      position: absolute; left: 12px; top: -80px; z-index: 100;
+      background: var(--blue); color: var(--on-blue); font-weight: 700;
+      padding: 12px 20px; border-radius: 999px; text-decoration: none;
+    }
+    .skip-link:focus { top: 12px; }
+    main:focus, h1:focus { outline: none; }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html { -webkit-text-size-adjust: 100%; }
+    body {
+      font-family: var(--font);
+      background: var(--bg);
+      color: var(--ink);
+      line-height: 1.5;
+      padding: clamp(12px, 2vw, 32px);
+    }
+    a, button { font-family: inherit; }
+    :focus-visible { outline: 3px solid var(--blue); outline-offset: 2px; }
+
+    .wrap { width: 100%; }  /* full width, not squeezed in the middle */
+
+    /* ============ NAVBAR ============ */
+    .navbar {
+      display: grid;
+      grid-template-columns: 1fr auto 1fr;
+      align-items: center;
+      gap: 16px;
+      background: var(--surface);
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      padding: 10px 14px 10px 14px;
+    }
+    .brand { display: flex; align-items: center; gap: 12px; text-decoration: none; color: var(--ink); }
+
+    /* LOGO PLACEHOLDER: replace the whole <span class="logo-slot"> with
+      <img src="your-logo.png" alt="Blood Bank logo" class="logo-img"> */
+    .logo-slot, .logo-img {
+      width: 40px; height: 40px; border-radius: 12px; flex: none;
+    }
+    .logo-slot {
+      display: grid; place-items: center;
+      border: 2px dashed var(--dash);
+      background: var(--blue-soft);
+      color: var(--blue);
+      font-size: 0.625rem; font-weight: 700;
+    }
+    .logo-img { object-fit: contain; }
+    .brand-name { font-size: 1.25rem; font-weight: 800; letter-spacing: -0.01em; }
+
+    .nav-links { display: flex; flex-wrap: wrap; justify-content: center; gap: 4px; background: var(--bg); padding: 4px; border-radius: 999px; }
+    .nav-links a {
+      display: inline-block; text-decoration: none; background: transparent; color: var(--muted);
+      font-size: 0.9375rem; font-weight: 600;
+      padding: 9px 22px; border-radius: 999px;
+      transition: background .15s, color .15s;
+    }
+    .nav-links a:hover { color: var(--ink); }
+    .nav-links a[aria-current="page"] { background: var(--blue); color: var(--on-blue); }
+    /* right side of the navbar intentionally empty (no profile picture) */
+
+    /* ============ PAGE SECTIONS ============ */
+    .page { display: none; padding-top: 22px; }
+    .page.active { display: block; }
+
+    .page-head { display: flex; justify-content: space-between; align-items: flex-end; gap: 16px; flex-wrap: wrap; margin-bottom: 18px; }
+    .page-head h1 { font-size: 1.625rem; font-weight: 800; letter-spacing: -0.02em; }
+    .page-head p { color: var(--muted); font-size: 0.9375rem; }
+
+    .btn {
+      border: 0; cursor: pointer; font-size: 0.9375rem; font-weight: 700;
+      background: var(--blue); color: var(--on-blue);
+      padding: 12px 24px; border-radius: 999px;
+      transition: background .15s;
+    }
+    .btn:hover { background: var(--blue-dark); }
+
+    /* ============ CARDS ============ */
+    .grid {
+      display: grid;
+      grid-template-columns: 1.7fr 1fr;
+      grid-template-rows: auto auto;
+      gap: 16px;
+    }
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      padding: 22px;
+    }
+    .card.tall { grid-row: span 2; }
+
+    .card-head { display: flex; align-items: flex-start; gap: 14px; margin-bottom: 18px; }
+    .drop {
+      width: 44px; height: 44px; flex: none;
+      display: grid; place-items: center;
+      background: var(--blue-soft); border-radius: 14px;
+    }
+    .drop { color: var(--blue); }
+    .drop svg { width: 22px; height: 22px; }
+    .card-head h2 { font-size: 1.0625rem; font-weight: 800; line-height: 1.3; }
+    .card-head p { font-size: 0.875rem; color: var(--muted); margin-top: 2px; }
+    .card-link {
+      margin-left: auto; flex: none; width: 34px; height: 34px;
+      display: grid; place-items: center; border-radius: 50%;
+      border: 1px solid var(--line); background: var(--surface);
+      color: var(--muted); cursor: pointer; text-decoration: none;
+    }
+    .card-link:hover { color: var(--blue); border-color: var(--blue); }
+    .card-link svg { width: 16px; height: 16px; }
+
+    /* Blood type bar chart: set --v (percentage) on each .bar */
+    .chart {
+      display: grid; grid-template-columns: repeat(8, 1fr);
+      align-items: end; gap: 12px; height: 300px;
+      padding-top: 8px; border-bottom: 1px solid var(--line);
+    }
+    .bar-col { height: 100%; display: flex; flex-direction: column; justify-content: flex-end; align-items: center; gap: 8px; }
+    .bar-pct { font-size: 0.875rem; font-weight: 700; }
+    .bar {
+      width: 100%; max-width: 64px;
+      height: calc(var(--v) / 32 * 100% - 30px);
+      min-height: 44px;
+      background: var(--blue); border-radius: 14px 14px 6px 6px;
+      display: flex; justify-content: center; padding-top: 10px;
+    }
+    .bar span {
+      flex: none; width: 2.25rem; height: 2.25rem; padding: 0;
+      display: grid; place-items: center;
+      background: var(--surface); color: var(--blue-dark);
+      border-radius: 50%; font-size: 0.75rem; font-weight: 800; line-height: 1;
+    }
+    .chart-note { font-size: 0.8125rem; color: var(--muted); margin-top: 14px; }
+
+    .big-number { font-size: 3.5rem; font-weight: 800; letter-spacing: -0.03em; line-height: 1; }
+    .big-number small { font-size: 1rem; font-weight: 600; color: var(--muted); letter-spacing: 0; margin-left: 6px; }
+
+    .components { list-style: none; display: grid; gap: 14px; }
+    .components li { display: grid; gap: 6px; }
+    .comp-row { display: flex; justify-content: space-between; font-size: 0.875rem; font-weight: 600; }
+    .comp-row span:last-child { color: var(--muted); font-weight: 700; }
+    .meter { height: 2rem; }
+    .meter i {
+      display: flex; align-items: center; height: 100%; width: var(--w); min-width: 3.5rem;
+      background: var(--c, var(--blue)); border-radius: 999px; padding: 0 4px;
+    }
+    .meter i span {
+      min-height: 1.5rem; padding: 0 10px; display: grid; place-items: center;
+      background: var(--surface); color: var(--c-dark, var(--blue-dark));
+      border-radius: 999px; font-size: 0.75rem; font-weight: 800; font-style: normal;
+    }
+
+    .components li:nth-child(2) { --c: var(--gold); --c-dark: var(--gold-dark); }
+    .components li:nth-child(3) { --c: var(--teal); --c-dark: var(--teal-dark); }
+
+    /* ============ DATABASE ============ */
+    .table-card { padding: 8px 8px 12px; overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; min-width: 640px; font-size: 0.90625rem; }
+    th { text-align: left; font-size: 0.8125rem; font-weight: 700; color: var(--muted); padding: 14px 16px; border-bottom: 1px solid var(--line); }
+    td { padding: 14px 16px; border-bottom: 1px solid var(--line); }
+    tr:last-child td { border-bottom: 0; }
+    .tag { display: inline-block; padding: 3px 12px; border-radius: 999px; font-weight: 700; font-size: 0.8125rem; background: var(--blue-soft); color: var(--blue-dark); }
+    .status { font-weight: 600; color: var(--ok); }
+    .status.pending { color: var(--warn); }
+
+    /* ============ ABOUT ============ */
+    .about-hero { padding: 36px; }
+    .about-hero h1 { font-size: 1.875rem; font-weight: 800; letter-spacing: -0.02em; margin-bottom: 10px; }
+    .about-hero p { color: var(--muted); max-width: 64ch; font-size: 1rem; }
+    .about-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-top: 16px; }
+    .about-grid .card h3 { font-size: 1.0625rem; font-weight: 800; margin: 14px 0 6px; }
+    .about-grid .card p { font-size: 0.90625rem; color: var(--muted); }
+
+    /* ============ NEW ENTRY DIALOG ============ */
+    .entry-dialog {
+      border: 1px solid var(--line); border-radius: var(--radius);
+      padding: 0; width: min(520px, calc(100% - 24px));
+      margin: auto; color: var(--ink); background: var(--surface);
+    }
+    .entry-dialog::backdrop { background: rgba(18, 35, 61, .45); }
+    .dialog-inner { padding: 24px; }
+    .dialog-inner h2 { font-size: 1.25rem; font-weight: 800; }
+    .dialog-inner > p { color: var(--muted); font-size: 0.90625rem; margin: 4px 0 18px; }
+    .form-placeholder {
+      border: 2px dashed var(--dash); background: var(--blue-soft);
+      border-radius: 16px; padding: 36px 20px; text-align: center;
+      color: var(--blue-dark); font-weight: 600; font-size: 0.90625rem;
+    }
+    .form-placeholder small { display: block; font-weight: 500; color: var(--muted); margin-top: 4px; }
+    .dialog-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px; }
+    .btn-ghost { background: transparent; color: var(--ink); border: 1px solid var(--line); }
+    .btn-ghost:hover { background: var(--bg); }
+    .btn:disabled { opacity: .45; cursor: not-allowed; }
+    .btn:disabled:hover { background: var(--blue); }
+
+    /* ============ DETAIL DIALOG (card arrows) ============ */
+    .card-link { padding: 0; }
+    .detail-list { width: 100%; border-collapse: collapse; font-size: 0.90625rem; min-width: 0; }
+    .detail-list th, .detail-list td { padding: 10px 6px; }
+    .detail-list td:last-child, .detail-list th:last-child { text-align: right; }
+    .detail-text { display: grid; gap: 14px; }
+    .detail-text strong { display: block; font-size: 0.9375rem; }
+    .detail-text span { color: var(--muted); font-size: 0.875rem; }
+
+    /* ============ DATABASE TABS + SEPARATE PAGES ============ */
+    a.btn { display: inline-block; text-decoration: none; line-height: 1.2; }
+    .tabs { display: flex; gap: 6px; border-bottom: 1px solid var(--line); margin-bottom: 16px; }
+    .tabs a { padding: 10px 20px; font-weight: 700; color: var(--muted); text-decoration: none; border-bottom: 3px solid transparent; margin-bottom: -1px; }
+    .tabs a:hover { color: var(--ink); }
+    .tabs a[aria-current="page"] { color: var(--blue); border-bottom-color: var(--blue); }
+    .idlink { color: var(--blue); font-weight: 700; text-decoration: none; }
+    .idlink:hover { text-decoration: underline; }
+
+    /* ============ FORMS, ROW MENU, TOAST ============ */
+    .pk, .fk { font-size: 0.625rem; font-weight: 800; border-radius: 6px; padding: 1px 6px; margin-left: 4px; vertical-align: middle; }
+    .pk { background: var(--bg); color: var(--muted); border: 1px solid var(--line); }
+    .fk { background: var(--blue-soft); color: var(--blue-dark); }
+    .col-actions { text-align: right; width: 90px; }
+    .empty { text-align: center; color: var(--muted); padding: 28px; }
+    .dots {
+      width: 34px; height: 34px; display: inline-grid; place-items: center; border-radius: 50%;
+      border: 1px solid var(--line); background: var(--surface); color: var(--muted); cursor: pointer;
+    }
+    .dots:hover { color: var(--blue); border-color: var(--blue); }
+    .dots svg { width: 16px; height: 16px; }
+    .row-menu {
+      position: fixed; z-index: 60; min-width: 150px; background: var(--surface);
+      border: 1px solid var(--line); border-radius: 14px; padding: 6px;
+      box-shadow: 0 8px 24px rgba(18, 35, 61, .14);
+    }
+    .row-menu[hidden] { display: none; }
+    .row-menu button {
+      display: block; width: 100%; text-align: left; border: 0; background: none;
+      padding: 9px 12px; border-radius: 9px; font-size: 0.875rem; font-weight: 600; color: var(--ink); cursor: pointer;
+    }
+    .row-menu button:hover { background: var(--bg); }
+    .row-menu .del { color: var(--danger); }
+    .row-menu .del:hover { background: var(--danger-soft); }
+    .entry-form { padding: 24px; }
+    .form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 18px; }
+    .entry-form label { display: grid; gap: 6px; font-size: 0.875rem; font-weight: 700; }
+    .entry-form input, .entry-form select {
+      font: inherit; font-weight: 500; color: var(--ink); background: var(--surface);
+      border: 1px solid var(--field-border); border-radius: 12px; padding: 11px 14px; width: 100%;
+    }
+    .entry-fields { border: 0; padding: 0; margin: 0 0 22px; min-width: 0; }
+    .entry-fields legend { font-size: 1rem; font-weight: 800; margin-bottom: 12px; padding: 0; color: var(--blue-dark); }
+    .toast {
+      position: fixed; left: 50%; bottom: 24px; z-index: 70; transform: translate(-50%, 20px);
+      background: var(--ink); color: var(--bg); padding: 12px 22px; border-radius: 999px;
+      font-size: 0.875rem; font-weight: 600; opacity: 0; pointer-events: none; transition: opacity .2s, transform .2s;
+    }
+    .toast.show { opacity: 1; transform: translate(-50%, 0); }
+
+    /* ============ NAVBAR TOOLS (theme + accessibility) ============ */
+    .navbar { position: relative; }
+    .nav-tools { display: flex; gap: 8px; justify-self: end; position: relative; }
+    .tool-btn {
+      width: 42px; height: 42px; border-radius: 50%; flex: none;
+      display: grid; place-items: center; cursor: pointer;
+      border: 1px solid var(--line); background: var(--bg); color: var(--ink);
+      transition: background .15s, color .15s, border-color .15s;
+    }
+    .tool-btn:hover { color: var(--blue); border-color: var(--blue); }
+    .tool-btn[aria-expanded="true"] { background: var(--blue); border-color: var(--blue); color: var(--on-blue); }
+    .tool-btn svg { width: 22px; height: 22px; }
+    .icon-sun { display: none; }
+    :root[data-theme="dark"] .icon-moon { display: none; }
+    :root[data-theme="dark"] .icon-sun { display: block; }
+
+    .a11y-panel {
+      position: absolute; right: 0; top: calc(100% + 14px); z-index: 50;
+      width: min(350px, calc(100vw - 24px)); padding: 18px;
+      background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius);
+      box-shadow: 0 12px 32px rgba(0, 0, 0, .2);
+    }
+    .a11y-panel[hidden] { display: none; }
+    .a11y-panel h2 { font-size: 1.0625rem; font-weight: 800; }
+    .a11y-sub { font-size: .8125rem; color: var(--muted); margin: 2px 0 12px; }
+    .size-row {
+      display: flex; align-items: center; justify-content: space-between; gap: 10px;
+      padding: 6px 2px 12px; margin-bottom: 4px; border-bottom: 1px solid var(--line);
+      font-size: .9375rem; font-weight: 700;
+    }
+    .size-ctl { display: flex; align-items: center; gap: 8px; }
+    .size-ctl button {
+      width: 38px; height: 38px; border-radius: 50%; cursor: pointer;
+      border: 1px solid var(--line); background: var(--bg); color: var(--ink); font-weight: 800; font-size: .9375rem;
+    }
+    .size-ctl button:hover:not(:disabled) { border-color: var(--blue); color: var(--blue); }
+    .size-ctl button:disabled { opacity: .4; cursor: not-allowed; }
+    .size-ctl output { min-width: 3.2em; text-align: center; font-weight: 700; color: var(--muted); font-size: .9375rem; }
+    .opt {
+      display: flex; width: 100%; align-items: center; justify-content: space-between; gap: 12px;
+      background: none; border: 0; border-radius: 12px; padding: 9px 2px; cursor: pointer;
+      color: var(--ink); text-align: left; font-size: .9375rem; font-weight: 700;
+    }
+    .opt:hover { background: var(--bg); }
+    .opt small { display: block; font-size: .8125rem; font-weight: 500; color: var(--muted); }
+    .track { flex: none; width: 44px; height: 26px; border-radius: 999px; background: var(--track-off); position: relative; transition: background .15s; }
+    .track::after {
+      content: ""; position: absolute; top: 3px; left: 3px; width: 20px; height: 20px;
+      border-radius: 50%; background: #fff; transition: transform .15s;
+    }
+    .opt[aria-checked="true"] .track { background: var(--blue); }
+    .opt[aria-checked="true"] .track::after { transform: translateX(18px); }
+    .panel-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--line); }
+    .panel-actions .btn { padding: 10px 18px; font-size: .875rem; }
+
+    /* ============ ADMIN LOGIN ============ */
+    html[data-auth="out"] .wrap, html[data-auth="out"] .skip-link, html[data-auth="out"] #detail-dialog,
+    html[data-auth="out"] #row-menu { display: none !important; }
+    html[data-auth="in"] .login-screen { display: none; }
+    .login-screen {
+      position: fixed; inset: 0; z-index: 200; overflow: auto;
+      display: grid; place-items: center; padding: 16px; background: var(--bg);
+    }
+    .login-card {
+      width: min(420px, 100%); padding: 32px 28px;
+      background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius);
+    }
+    .login-brand { display: flex; align-items: center; gap: 12px; margin-bottom: 20px; }
+    .login-card h1 { font-size: 1.5rem; font-weight: 800; letter-spacing: -0.02em; }
+    .login-sub { color: var(--muted); font-size: 0.9375rem; margin: 4px 0 22px; }
+    .login-card label { display: grid; gap: 6px; font-size: 0.875rem; font-weight: 700; margin-bottom: 16px; }
+    .login-card input[type="text"], .login-card input[type="password"] {
+      font: inherit; font-weight: 500; color: var(--ink); background: var(--surface);
+      border: 1px solid var(--field-border); border-radius: 12px; padding: 12px 14px; width: 100%;
+    }
+    .login-card .show-pw { display: flex; align-items: center; gap: 8px; font-weight: 600; cursor: pointer; margin: -4px 0 18px; }
+    .login-card .show-pw input { width: 18px; height: 18px; accent-color: var(--blue); }
+    /* hide the browser's built-in eye button (the "Show password" box does this job) */
+    .login-card input::-ms-reveal, .login-card input::-ms-clear { display: none; }
+    .login-card input::-webkit-credentials-auto-fill-button { visibility: hidden; display: none !important; pointer-events: none; }
+    .login-error {
+      background: var(--danger-soft); color: var(--danger); border-radius: 12px;
+      padding: 10px 14px; font-size: 0.875rem; font-weight: 700; margin-bottom: 16px;
+    }
+    .login-error[hidden] { display: none; }
+    .login-card .btn { width: 100%; padding: 14px 24px; }
+
+    /* ============ RESPONSIVE ============ */
+    @media (max-width: 900px) {
+      .grid { grid-template-columns: 1fr; }
+      .card.tall { grid-row: auto; }
+      .about-grid { grid-template-columns: 1fr; }
+    }
+    @media (max-width: 640px) {
+      body { padding: 10px; }
+      .navbar { grid-template-columns: 1fr; border-radius: 24px; justify-items: center; }
+      .nav-tools { position: static; justify-self: center; }
+      .a11y-panel { left: 12px; right: 12px; width: auto; top: calc(100% + 10px); }
+      .nav-links a { padding: 8px 14px; font-size: 0.875rem; }
+      .chart { gap: 6px; height: 250px; }
+      .bar span { width: 1.75rem; height: 1.75rem; font-size: 0.5625rem; }
+      .bar-pct { font-size: 0.6875rem; }
+      .card { padding: 16px; }
+    }
+    </style>
+  </head>
+
+  <body>
+    <!-- ================= ADMIN LOGIN ================= -->
+    <div class="login-screen" id="login-screen">
+      <form class="login-card" id="login-form" autocomplete="off" novalidate>
+        <div class="login-brand">
+          <span class="logo-slot" aria-hidden="true">LOGO</span>
+          <span class="brand-name">Blood Bank</span>
+        </div>
+        <h1>Admin log in</h1>
+        <p class="login-sub">Enter your admin account to open the website.</p>
+
+        <div class="login-error" id="login-error" role="alert" hidden></div>
+
+        <label>Username<input type="text" id="login-user" name="username" autocomplete="username" autocapitalize="none" spellcheck="false" required></label>
+        <label>Password<input type="password" id="login-pass" name="password" autocomplete="current-password" required></label>
+        <label class="show-pw"><input type="checkbox" id="login-show"> Show password</label>
+
+        <button class="btn" type="submit">Log in</button>
+      </form>
+    </div>
+    <a class="skip-link" href="#main">Skip to main content</a>
+    <div class="wrap">
+
+      <!-- ================= NAVBAR ================= -->
+      <header class="navbar" role="banner">
+
+        <!-- LEFT: logo placeholder + system name -->
+        <a class="brand" href="#dashboard">
+          <!-- ICON PLACEHOLDER: swap this span for <img src="your-logo.png" alt="Blood Bank logo" class="logo-img"> -->
+          <span class="logo-slot" aria-hidden="true">LOGO</span>
+          <span class="brand-name">Blood Bank</span>
+        </a>
+
+        <!-- MIDDLE: About, Dashboard, Database -->
+        <nav class="nav-links" aria-label="Main">
+          <a href="#about" data-page="about">About</a>
+          <a href="#dashboard" data-page="dashboard" aria-current="page">Dashboard</a>
+          <a href="#database" data-page="database">Database</a>
+        </nav>
+
+        <!-- RIGHT: theme toggle + accessibility menu -->
+        <div class="nav-tools">
+          <button type="button" class="tool-btn" id="theme-toggle" aria-label="Switch to dark theme" title="Switch to dark theme">
+            <svg class="icon-moon" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M20.5 14.6A8.5 8.5 0 0 1 9.4 3.5a.6.6 0 0 0-.8-.7A9.5 9.5 0 1 0 21.2 15.4a.6.6 0 0 0-.7-.8Z"/></svg>
+            <svg class="icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2.5v2.2M12 19.3v2.2M2.5 12h2.2M19.3 12h2.2M5.3 5.3l1.6 1.6M17.1 17.1l1.6 1.6M18.7 5.3l-1.6 1.6M6.9 17.1l-1.6 1.6"/></svg>
+          </button>
+          <button type="button" class="tool-btn" id="a11y-toggle" aria-label="Accessibility settings" title="Accessibility settings" aria-expanded="false" aria-controls="a11y-panel">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="4.6" r="1.8" fill="currentColor" stroke="none"/><path d="M4.5 8.6c5 1.4 10 1.4 15 0M12 9.5v5m0 0-3 6m3-6 3 6"/></svg>
+          </button>
+          <button type="button" class="tool-btn" id="logout-btn" aria-label="Log out" title="Log out">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="m16 17 5-5-5-5M21 12H9"/></svg>
+          </button>
+
+          <div class="a11y-panel" id="a11y-panel" role="dialog" aria-labelledby="a11y-title" hidden>
+            <h2 id="a11y-title">Accessibility</h2>
+            <p class="a11y-sub">Saved on this device.</p>
+
+            <div class="size-row">
+              <span id="size-label">Text size</span>
+              <div class="size-ctl" role="group" aria-labelledby="size-label">
+                <button type="button" id="size-down" aria-label="Decrease text size">A&minus;</button>
+                <output id="size-val" aria-live="polite">100%</output>
+                <button type="button" id="size-up" aria-label="Increase text size">A+</button>
+              </div>
+            </div>
+
+            <button type="button" class="opt" role="switch" aria-checked="false" data-opt="contrast"><span>High contrast<small>Stronger colors and borders</small></span><i class="track" aria-hidden="true"></i></button>
+            <button type="button" class="opt" role="switch" aria-checked="false" data-opt="font"><span>Readable font<small>Clearer letters, helps with dyslexia</small></span><i class="track" aria-hidden="true"></i></button>
+            <button type="button" class="opt" role="switch" aria-checked="false" data-opt="spacing"><span>Wider spacing<small>More space between lines and letters</small></span><i class="track" aria-hidden="true"></i></button>
+            <button type="button" class="opt" role="switch" aria-checked="false" data-opt="links"><span>Underline links<small>Makes links easy to spot</small></span><i class="track" aria-hidden="true"></i></button>
+            <button type="button" class="opt" role="switch" aria-checked="false" data-opt="focus"><span>Strong focus outline<small>Bigger keyboard highlight</small></span><i class="track" aria-hidden="true"></i></button>
+            <button type="button" class="opt" role="switch" aria-checked="false" data-opt="motion"><span>Reduce motion<small>Turns off animations</small></span><i class="track" aria-hidden="true"></i></button>
+
+            <div class="panel-actions">
+              <button type="button" class="btn" id="speak-btn">Read page aloud</button>
+              <button type="button" class="btn btn-ghost" id="a11y-reset">Reset</button>
+            </div>
+          </div>
+        </div>
+      </header>
+
+      <main id="main" tabindex="-1">
+
+        <!-- ================= DASHBOARD ================= -->
+        <section id="dashboard" class="page active">
+          <div class="page-head">
+            <div>
+              <h1>Dashboard</h1>
+              <p>A quick look at the current blood supply.</p>
+            </div>
+            <a class="btn" href="#new-donor">+ New Entry</a>
+          </div>
+
+          <div class="grid">
+
+            <!-- Card 1: Blood types -->
+            <article class="card tall">
+              <div class="card-head">
+                <div class="drop"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 20v-7M12 20V5M19 20v-10"/></svg></div>
+                <div>
+                  <h2>Blood Types</h2>
+                  <p>Share of the current stock for each of the eight blood groups (A, B, AB, O; positive and negative).</p>
+                </div>
+                <button class="card-link" data-detail="types" aria-label="View blood type details" title="View details">
+                  <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12 12 4M5.5 4H12v6.5"/></svg>
+                </button>
+              </div>
+
+              <!-- Replace the --v values (percent) with your real data -->
+              <div class="chart" role="img" aria-label="Bar chart of blood type share of stock: A+ 28%, A- 6%, B+ 20%, B- 5%, AB+ 4%, AB- 2%, O+ 30%, O- 5%. A-, B-, AB+, AB- and O- are low stock.">
+                <div class="bar-col"><span class="bar-pct">28%</span><div class="bar" style="--v:28"><span>A+</span></div></div>
+                <div class="bar-col"><span class="bar-pct">6%</span><div class="bar" style="--v:6"><span>A-</span></div></div>
+                <div class="bar-col"><span class="bar-pct">20%</span><div class="bar" style="--v:20"><span>B+</span></div></div>
+                <div class="bar-col"><span class="bar-pct">5%</span><div class="bar" style="--v:5"><span>B-</span></div></div>
+                <div class="bar-col"><span class="bar-pct">4%</span><div class="bar" style="--v:4"><span>AB+</span></div></div>
+                <div class="bar-col"><span class="bar-pct">2%</span><div class="bar" style="--v:2"><span>AB-</span></div></div>
+                <div class="bar-col"><span class="bar-pct">30%</span><div class="bar" style="--v:30"><span>O+</span></div></div>
+                <div class="bar-col"><span class="bar-pct">5%</span><div class="bar" style="--v:5"><span>O-</span></div></div>
+              </div>
+              <p class="chart-note">Sample values shown.</p>
+            </article>
+
+            <!-- Card 2: Total bags -->
+            <article class="card">
+              <div class="card-head">
+                <div class="drop"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="6" y="3" width="12" height="14" rx="3.5"/><path d="M10 6.2h4"/><path d="M12 17v4.5"/><path fill="currentColor" stroke="none" d="M12 8.8c-1.8 2-2.8 3.2-2.8 4.6a2.8 2.8 0 0 0 5.6 0c0-1.4-1-2.6-2.8-4.6Z"/></svg></div>
+                <div>
+                  <h2>Total Bags Collected</h2>
+                  <p>All blood bags received from donors, counted across every blood type and component.</p>
+                </div>
+                <button class="card-link" data-detail="total" aria-label="View total bags details" title="View details">
+                  <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12 12 4M5.5 4H12v6.5"/></svg>
+                </button>
+              </div>
+              <p class="big-number">167<small>bags</small></p>
+            </article>
+
+            <!-- Card 3: Components -->
+            <article class="card">
+              <div class="card-head">
+                <div class="drop"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8.5 3h7"/><path d="M9.5 3v14.5a2.5 2.5 0 0 0 5 0V3"/><path d="M9.5 12h5"/></svg></div>
+                <div>
+                  <h2>Bags by Component</h2>
+                  <p>Number of bags separated into red cells, plasma, and platelets.</p>
+                </div>
+                <button class="card-link" data-detail="components" aria-label="View component details" title="View details">
+                  <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12 12 4M5.5 4H12v6.5"/></svg>
+                </button>
+              </div>
+              <ul class="components">
+                <li><div class="comp-row"><span>Red cells</span><span>92 bags</span></div><div class="meter" aria-hidden="true"><i style="--w:55%"><span>55%</span></i></div></li>
+                <li><div class="comp-row"><span>Plasma</span><span>48 bags</span></div><div class="meter" aria-hidden="true"><i style="--w:29%"><span>29%</span></i></div></li>
+                <li><div class="comp-row"><span>Platelets</span><span>27 bags</span></div><div class="meter" aria-hidden="true"><i style="--w:16%"><span>16%</span></i></div></li>
+              </ul>
+            </article>
+
+          </div>
+        </section>
+
+        <!-- ================= DATABASE: DONORS TAB ================= -->
+        <section id="database" class="page">
+          <div class="page-head">
+            <div>
+              <h1>Database</h1>
+              <p>Everyone who has donated blood.</p>
+            </div>
+            <a class="btn" href="#new-donor">+ New Entry</a>
+          </div>
+
+          <nav class="tabs" aria-label="Database tables"><a href="#database">Donors</a><a href="#bags">Bags</a></nav>
+
+          <div class="card table-card">
+            <table>
+              <caption class="sr-only">Donors</caption>
+              <thead>
+                <tr><th scope="col">donor_id <span class="pk">PK</span></th><th scope="col">Name</th><th scope="col">Blood type</th><th scope="col">Last donation</th><th scope="col" class="col-actions">Actions</th></tr>
+              </thead>
+              <tbody id="donor-rows"></tbody>
+            </table>
+          </div>
+        </section>
+
+        <!-- ================= DATABASE: BAGS TAB ================= -->
+        <section id="bags" class="page">
+          <div class="page-head">
+            <div>
+              <h1>Database</h1>
+              <p>Every blood bag. Each bag links to its donor through donor_id.</p>
+            </div>
+            <a class="btn" href="#new-donor">+ New Entry</a>
+          </div>
+
+          <nav class="tabs" aria-label="Database tables"><a href="#database">Donors</a><a href="#bags">Bags</a></nav>
+
+          <div class="card table-card">
+            <table>
+              <caption class="sr-only">Blood bags</caption>
+              <thead>
+                <tr><th scope="col">bag_id <span class="pk">PK</span></th><th scope="col">donor_id <span class="fk">FK</span></th><th scope="col">Blood type</th><th scope="col">Component</th><th scope="col">Date collected</th><th scope="col">Status</th><th scope="col" class="col-actions">Actions</th></tr>
+              </thead>
+              <tbody id="bag-rows"></tbody>
+            </table>
+          </div>
+        </section>
+
+        <!-- ================= NEW ENTRY (donor + blood details in one form) ================= -->
+        <section id="new-donor" class="page">
+          <div class="page-head">
+            <div>
+              <h1>New Entry</h1>
+              <p>Fill in the donor and the blood details together. When saved, they are stored separately in the Donors and Bags tables.</p>
+            </div>
+          </div>
+
+          <form class="card entry-form" data-type="entry" data-mode="new">
+            <fieldset class="entry-fields">
+              <legend>Donor details</legend>
+              <div class="form-grid">
+                <label>Full name<input type="text" name="name" required placeholder="e.g. Juan Dela Cruz"></label>
+                <label>Blood type<select name="type" required><option value="">Select</option><option>A+</option><option>A-</option><option>B+</option><option>B-</option><option>AB+</option><option>AB-</option><option>O+</option><option>O-</option></select></label>
+              </div>
+            </fieldset>
+            <fieldset class="entry-fields">
+              <legend>Blood details</legend>
+              <div class="form-grid">
+                <label>Component<select name="comp"><option>Red cells</option><option>Plasma</option><option>Platelets</option></select></label>
+                <label>Date collected<input type="date" name="date" required></label>
+                <label>Status<select name="status"><option>Stored</option><option>Testing</option></select></label>
+              </div>
+            </fieldset>
+            <div class="dialog-actions">
+              <a class="btn btn-ghost" href="#database">Cancel</a>
+              <button class="btn" type="submit">Save entry</button>
+            </div>
+          </form>
+        </section>
+
+        <!-- ================= EDIT DONOR ================= -->
+        <section id="edit-donor" class="page">
+          <div class="page-head">
+            <div>
+              <h1>Edit donor</h1>
+              <p>Change the details, then save.</p>
+            </div>
+          </div>
+
+          <form class="card entry-form" data-type="donor" data-mode="edit">
+            <!-- SAMPLE FORM: change the fields to match your real columns -->
+            <div class="form-grid">
+              <label>Full name<input type="text" name="name" required placeholder="e.g. Juan Dela Cruz"></label>
+              <label>Blood type<select name="type" required><option value="">Select</option><option>A+</option><option>A-</option><option>B+</option><option>B-</option><option>AB+</option><option>AB-</option><option>O+</option><option>O-</option></select></label>
+              <label>Last donation<input type="date" name="last" required></label>
+            </div>
+            <div class="dialog-actions">
+              <a class="btn btn-ghost" href="#database">Cancel</a>
+              <button class="btn" type="submit">Save changes</button>
+            </div>
+          </form>
+        </section>
+
+        <!-- ================= EDIT BAG ================= -->
+        <section id="edit-bag" class="page">
+          <div class="page-head">
+            <div>
+              <h1>Edit blood bag</h1>
+              <p>Change the details, then save.</p>
+            </div>
+          </div>
+
+          <form class="card entry-form" data-type="bag" data-mode="edit">
+            <!-- SAMPLE FORM: change the fields to match your real columns -->
+            <div class="form-grid">
+              <label>donor_id (foreign key)<select name="donor" required data-donor-select></select></label>
+              <label>Component<select name="comp"><option>Red cells</option><option>Plasma</option><option>Platelets</option></select></label>
+              <label>Date collected<input type="date" name="date" required></label>
+              <label>Status<select name="status"><option>Stored</option><option>Testing</option></select></label>
+            </div>
+            <div class="dialog-actions">
+              <a class="btn btn-ghost" href="#bags">Cancel</a>
+              <button class="btn" type="submit">Save changes</button>
+            </div>
+          </form>
+        </section>
+
+        <!-- ================= ABOUT ================= -->
+        <section id="about" class="page">
+          <div class="card about-hero">
+            
+            <img src="assets/images/blood_drop_professional.png" alt="A professional hand carefully holding a large, symbolic blood drop icon in a blurred modern laboratory setting, representing the storage and care of blood donations." class="about-hero-image" style="max-width: 50%; height: auto; border-radius: 12px; margin-bottom: 20px;">
+            
+            <h1>About Blood Bank</h1>
+            <p>Blood Bank helps staff record, track, and monitor donated blood in one place, so the right blood is ready when patients need it.</p>
+          </div>
+
+          <div class="about-grid">
+            <div class="card">
+              <div class="drop"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2.5c-.4 0-.8.2-1 .5C8.3 6.3 5 10.2 5 14.2a7 7 0 0 0 14 0c0-4-3.3-7.9-6-11.2-.2-.3-.6-.5-1-.5Z"/></svg></div>
+              <h3>Dashboard</h3>
+              <p>See stock by blood type, total bags collected, and bags per component at a glance.</p>
+            </div>
+            <div class="card">
+              <div class="drop"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2.5c-.4 0-.8.2-1 .5C8.3 6.3 5 10.2 5 14.2a7 7 0 0 0 14 0c0-4-3.3-7.9-6-11.2-.2-.3-.6-.5-1-.5Z"/></svg></div>
+              <h3>Database</h3>
+              <p>Browse donors and blood bags in two tabs. Each bag is linked to its donor.</p>
+            </div>
+            <div class="card">
+              <div class="drop"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2.5c-.4 0-.8.2-1 .5C8.3 6.3 5 10.2 5 14.2a7 7 0 0 0 14 0c0-4-3.3-7.9-6-11.2-.2-.3-.6-.5-1-.5Z"/></svg></div>
+              <h3>New entries</h3>
+              <p>Add a new donor or blood bag on its own page.</p>
+            </div>
+          </div>
+        </section>
+
+      </main>
+    </div>
+
+    <!-- ================= CARD DETAILS (opened by the arrow buttons) ================= -->
+    <dialog id="detail-dialog" class="entry-dialog" aria-labelledby="detail-title" aria-describedby="detail-desc">
+      <div class="dialog-inner">
+        <h2 id="detail-title"></h2>
+        <p id="detail-desc"></p>
+
+        <!-- Sample numbers: replace with real data -->
+        <div data-detail-body="types" hidden>
+          <table class="detail-list">
+            <caption class="sr-only">Bags in stock by blood type</caption>
+            <thead><tr><th scope="col">Blood type</th><th scope="col">Bags</th><th scope="col">Share</th><th scope="col">Stock</th></tr></thead>
+            <tbody>
+              <tr><td>A+</td><td>47</td><td>28%</td><td class="status">OK</td></tr>
+              <tr><td>A-</td><td>10</td><td>6%</td><td class="status pending">Low</td></tr>
+              <tr><td>B+</td><td>33</td><td>20%</td><td class="status">OK</td></tr>
+              <tr><td>B-</td><td>8</td><td>5%</td><td class="status pending">Low</td></tr>
+              <tr><td>AB+</td><td>7</td><td>4%</td><td class="status pending">Low</td></tr>
+              <tr><td>AB-</td><td>3</td><td>2%</td><td class="status pending">Low</td></tr>
+              <tr><td>O+</td><td>50</td><td>30%</td><td class="status">OK</td></tr>
+              <tr><td>O-</td><td>9</td><td>5%</td><td class="status pending">Low</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div data-detail-body="total" hidden>
+          <table class="detail-list">
+            <caption class="sr-only">Bags collected by week</caption>
+            <thead><tr><th scope="col">Period</th><th scope="col">Bags collected</th></tr></thead>
+            <tbody>
+              <tr><td>Week 1</td><td>38</td></tr>
+              <tr><td>Week 2</td><td>45</td></tr>
+              <tr><td>Week 3</td><td>41</td></tr>
+              <tr><td>Week 4</td><td>43</td></tr>
+              <tr><td><strong>Total</strong></td><td><strong>167</strong></td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div data-detail-body="components" hidden>
+          <div class="detail-text">
+            <div><strong>Red cells: 92 bags</strong><span>Carry oxygen. Used for surgery, trauma, and anemia.</span></div>
+            <div><strong>Plasma: 48 bags</strong><span>The liquid part of blood. Used for burns and clotting problems.</span></div>
+            <div><strong>Platelets: 27 bags</strong><span>Help blood clot. Used for cancer treatment and bleeding. They expire fastest.</span></div>
+          </div>
+        </div>
+
+        <div class="dialog-actions">
+          <button class="btn btn-ghost" data-close-detail>Close</button>
+          <button class="btn" data-goto-database>View in Database</button>
+        </div>
+      </div>
+    </dialog>
+
+    <!-- Shared 3-dots menu (moved next to the clicked row by the script) -->
+    <div id="row-menu" class="row-menu" role="menu" hidden>
+      <button role="menuitem" data-act="edit">Edit</button>
+      <button role="menuitem" data-act="delete" class="del">Delete</button>
+    </div>
+    <div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+    <script>
+    /* Simple tab switching: About / Dashboard / Database */
+    (function () {
+      var pages = ["about", "dashboard", "database", "bags", "new-donor", "edit-donor", "edit-bag"];
+      var buttons = document.querySelectorAll(".nav-links a");
+
+      function show(name, moved) {
+        if (pages.indexOf(name) === -1) name = "dashboard";
+        /* the edit pages need a chosen row (opened from the 3-dots menu) */
+        if (/^edit-/.test(name) && !editing) { location.hash = name === "edit-donor" ? "database" : "bags"; return; }
+        pages.forEach(function (p) {
+          document.getElementById(p).classList.toggle("active", p === name);
+        });
+        /* Bags tab and New Entry pages still highlight "Database" in the navbar */
+        var navName = { bags: "database", "new-donor": "database", "edit-donor": "database", "edit-bag": "database" }[name] || name;
+        buttons.forEach(function (b) {
+          if (b.dataset.page === navName) b.setAttribute("aria-current", "page");
+          else b.removeAttribute("aria-current");
+        });
+        document.querySelectorAll(".tabs a").forEach(function (t) {
+          if (t.getAttribute("href") === "#" + name) t.setAttribute("aria-current", "page");
+          else t.removeAttribute("aria-current");
+        });
+        /* screen readers: update the tab title and move focus to the new page heading */
+        var h = document.getElementById(name).querySelector("h1");
+        document.title = (h ? h.textContent : "Blood Bank") + " \u2013 Blood Bank";
+        window.scrollTo(0, 0);
+        if (moved && h) { h.setAttribute("tabindex", "-1"); h.focus({ preventScroll: true }); }
+      }
+
+      window.addEventListener("hashchange", function () { show(location.hash.slice(1), true); });
+
+      /* skip link (the page uses #hash for navigation, so focus <main> directly) */
+      document.querySelector(".skip-link").addEventListener("click", function (e) {
+        e.preventDefault();
+        document.getElementById("main").focus();
+      });
+
+      /* Card arrow buttons: open a details window for that card */
+      var detail = document.getElementById("detail-dialog");
+      var info = {
+        types: ["Blood types", "Bags in stock for each blood group."],
+        total: ["Total bags collected", "Bags received from donors, by week."],
+        components: ["Bags by component", "What each component is and what it is used for."]
+      };
+      document.querySelectorAll("[data-detail]").forEach(function (b) {
+        b.addEventListener("click", function () {
+          var k = b.dataset.detail;
+          detail.querySelectorAll("[data-detail-body]").forEach(function (el) { el.hidden = el.dataset.detailBody !== k; });
+          document.getElementById("detail-title").textContent = info[k][0];
+          document.getElementById("detail-desc").textContent = info[k][1];
+          detail.showModal();
+        });
+      });
+      detail.querySelector("[data-close-detail]").addEventListener("click", function () { detail.close(); });
+      detail.querySelector("[data-goto-database]").addEventListener("click", function () { detail.close(); location.hash = "bags"; });
+      detail.addEventListener("click", function (e) { if (e.target === detail) detail.close(); });
+
+      /* ===== Sample data kept in memory. Replace with your backend / database later. ===== */
+      let donors = [];
+    let bags = [];
+
+    // Fetch data from PHP
+    async function loadData() {
+      try {
+        const response = await fetch('backend/api.php?action=get_data');
+        const data = await response.json();
+        donors = data.donors;
+        bags = data.bags;
+        
+        // Call your existing render function to update the tables
+        render(); 
+      } catch (error) {
+        console.error('Error fetching data:', error);
+        toast('Failed to load database.');
+      }
+    }
+
+    // Call loadData() when the page loads
+    loadData();
+      const listFor = (type) => (type === "donor" ? donors : bags);
+      const $ = (id) => document.getElementById(id);
+      const esc = (v) => String(v).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+      const fmt = (iso) => new Date(iso + "T00:00:00Z").toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" });
+      const dotsIcon = '<svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><circle cx="8" cy="3" r="1.5"/><circle cx="8" cy="8" r="1.5"/><circle cx="8" cy="13" r="1.5"/></svg>';
+      const dots = (type, id) => `<td class="col-actions"><button class="dots" data-type="${type}" data-id="${id}" aria-label="Options for ${id}" aria-haspopup="true">${dotsIcon}</button></td>`;
+      const today = () => new Date().toISOString().slice(0, 10);
+      let target = null;    /* { type, id } of the row whose 3-dots menu is open */
+      let editing = null;   /* { type, id } of the row being edited */
+      let toastTimer;
+
+      function toast(msg) {
+        const t = $("toast");
+        t.textContent = msg;
+        t.classList.add("show");
+        clearTimeout(toastTimer);
+        toastTimer = setTimeout(function () { t.classList.remove("show"); }, 2600);
+      }
+
+      function resetDates() {
+        document.querySelectorAll('form[data-mode="new"] input[type="date"]').forEach((i) => { i.value = today(); });
+      }
+      
+      function render() {
+        $("donor-rows").innerHTML = donors.map((d) =>
+          `<tr><td>${d.id}</td><td>${esc(d.name)}</td><td><span class="tag">${d.type}</span></td><td>${fmt(d.last)}</td>${dots("donor", d.id)}</tr>`
+        ).join("") || '<tr><td colspan="5" class="empty">No donors yet. Use + New Entry to add one.</td></tr>';
+        $("bag-rows").innerHTML = bags.map((b) => {
+          const d = donors.find((x) => x.id === b.donor);
+          return `<tr><td>${b.id}</td><td><a class="idlink" href="#database">${b.donor}</a></td><td><span class="tag">${d ? d.type : "?"}</span></td><td>${b.comp}</td><td>${fmt(b.date)}</td><td class="status${b.status === "Testing" ? " pending" : ""}">${b.status}</td>${dots("bag", b.id)}</tr>`;
+        }).join("") || '<tr><td colspan="7" class="empty">No bags yet. Use + New Entry to add one.</td></tr>';
+        /* the donor_id dropdown in the bag forms always lists the current donors */
+        document.querySelectorAll("[data-donor-select]").forEach((sel) => {
+          const keep = sel.value;
+          sel.innerHTML = donors.map((d) => `<option value="${d.id}">${d.id} - ${esc(d.name)}</option>`).join("");
+          if (keep) sel.value = keep;
+        });
+      }
+
+      /* ----- 3-dots menu on every row: Edit / Delete ----- */
+      const menu = $("row-menu");
+      function closeMenu() { menu.hidden = true; target = null; }
+      document.addEventListener("click", function (e) {
+        const btn = e.target.closest(".dots");
+        if (!btn) { if (!menu.contains(e.target)) closeMenu(); return; }
+        target = { type: btn.dataset.type, id: btn.dataset.id };
+        const r = btn.getBoundingClientRect();
+        menu.hidden = false;
+        menu.style.top = r.bottom + 4 + "px";
+        menu.style.left = Math.max(8, r.right - menu.offsetWidth) + "px";
+      });
+      document.addEventListener("keydown", function (e) { if (e.key === "Escape") closeMenu(); });
+      window.addEventListener("scroll", closeMenu, true);
+      window.addEventListener("resize", closeMenu);
+
+      /* Edit: open the edit page with the form filled in */
+      menu.querySelector('[data-act="edit"]').addEventListener("click", function () {
+        if (!target) return;
+        editing = target;
+        closeMenu();
+        const rec = listFor(editing.type).find((r) => r.id === editing.id);
+        const f = document.querySelector('form[data-type="' + editing.type + '"][data-mode="edit"]');
+        Object.keys(rec).forEach((k) => { if (f.elements[k]) f.elements[k].value = rec[k]; });
+        f.closest("section").querySelector(".page-head p").textContent = "Editing " + editing.id + ". Change the details, then save.";
+        location.hash = "edit-" + editing.type;
+      });
+
+      /* Delete: remove the row (deleting a donor also deletes its bags) */
+      menu.querySelector('[data-act="delete"]').addEventListener("click", async function () {
+      if (!target) return;
+      const type = target.type, id = target.id;
+      closeMenu();
+      
+      if (!confirm("Delete " + id + "? This cannot be undone.")) return;
+
+      try {
+        const response = await fetch(`backend/api.php?action=delete_${type}&id=${id}`, {
+          method: 'POST' // or 'DELETE'
+        });
+        
+        const result = await response.json();
+        if (result.success) {
+          toast(id + " deleted.");
+          await loadData(); // Refresh the table
+        }
+      } catch (error) {
+        toast("Failed to delete " + id);
+      }
+    });
+
+      /* ----- Forms: New Entry and Edit share the same save logic ----- */
+    document.querySelectorAll(".entry-form").forEach(function (f) {
+        f.addEventListener("submit", async function (e) {
+          e.preventDefault();
+          const type = f.dataset.type;
+          const mode = f.dataset.mode;
+          const formData = new FormData(f);
+
+          if (mode === "edit" && editing && editing.id) {
+            formData.append("id", editing.id);
+          }
+
+          try {
+            const response = await fetch(`backend/api.php?action=add_${type}`, {
+              method: 'POST',
+              body: formData
+            });
+            
+            const result = await response.json();
+            
+            if (result.success) {
+              toast("Entry saved successfully.");
+              f.reset();
+              resetDates();
+              editing = null;
+              
+              await loadData();
+              location.hash = (type === "donor" || type === "entry") ? "database" : "bags";
+            } else {
+              toast(result.error || "Error saving entry.");
+            }
+          } catch (error) {
+            console.error("Submission Error:", error);
+            toast("Error saving entry: " + error.message);
+          }
+        });
+      });
+
+      /* ===== Admin login ===== */
+      const loginForm = $("login-form"), loginErr = $("login-error"), loginPass = $("login-pass");
+      $("login-show").addEventListener("change", function (e) { loginPass.type = e.target.checked ? "text" : "password"; });
+      loginForm.addEventListener("submit", function (e) {
+        e.preventDefault();
+        const user = $("login-user").value.trim();
+        if (user === "admin" && loginPass.value === "bloodbank.admin") {
+          try { sessionStorage.setItem("bb-auth", "1"); } catch (err) {}
+          document.documentElement.setAttribute("data-auth", "in");
+          loginForm.reset();
+          loginPass.type = "password";
+          loginErr.hidden = true;
+          show(location.hash.slice(1));
+          $("main").focus();
+        } else {
+          loginErr.textContent = "Incorrect username or password. Please try again.";
+          loginErr.hidden = false;
+          loginPass.value = "";
+          loginPass.focus();
+        }
+      });
+      if (document.documentElement.getAttribute("data-auth") === "out") $("login-user").focus();
+
+      /* ===== Theme toggle + Accessibility menu ===== */
+      const P = window.BBPrefs;
+      let prefs = P.load();
+      const themeBtn = $("theme-toggle"), a11yBtn = $("a11y-toggle"), panel = $("a11y-panel");
+      const names = { contrast: "High contrast", font: "Readable font", spacing: "Wider spacing", links: "Underline links", focus: "Strong focus outline", motion: "Reduce motion" };
+
+      function sync() {
+        P.apply(prefs);
+        const dark = prefs.theme === "dark";
+        const label = dark ? "Switch to light theme" : "Switch to dark theme";
+        themeBtn.setAttribute("aria-label", label);
+        themeBtn.title = label;
+        panel.querySelectorAll("[data-opt]").forEach((b) => b.setAttribute("aria-checked", String(!!prefs[b.dataset.opt])));
+        $("size-val").textContent = P.SIZES[prefs.size] + "%";
+        $("size-down").disabled = prefs.size <= 0;
+        $("size-up").disabled = prefs.size >= P.SIZES.length - 1;
+      }
+      function change(msg) { P.save(prefs); sync(); if (msg) toast(msg); }
+
+      themeBtn.addEventListener("click", function () {
+        prefs.theme = prefs.theme === "dark" ? "light" : "dark";
+        change(prefs.theme === "dark" ? "Dark theme on." : "Light theme on.");
+      });
+
+      function closePanel(returnFocus) {
+        panel.hidden = true;
+        a11yBtn.setAttribute("aria-expanded", "false");
+        if (returnFocus) a11yBtn.focus();
+      }
+      a11yBtn.addEventListener("click", function () {
+        if (!panel.hidden) { closePanel(true); return; }
+        closeMenu();
+        panel.hidden = false;
+        a11yBtn.setAttribute("aria-expanded", "true");
+        $("size-up").focus();
+      });
+      document.addEventListener("click", function (e) {
+        if (!panel.hidden && !panel.contains(e.target) && !a11yBtn.contains(e.target)) closePanel(false);
+      });
+      document.addEventListener("focusin", function (e) {
+        if (!panel.hidden && !panel.contains(e.target) && !a11yBtn.contains(e.target)) closePanel(false);
+      });
+      document.addEventListener("keydown", function (e) { if (e.key === "Escape" && !panel.hidden) closePanel(true); });
+
+      panel.querySelectorAll("[data-opt]").forEach(function (b) {
+        b.addEventListener("click", function () {
+          const k = b.dataset.opt;
+          prefs[k] = !prefs[k];
+          change(names[k] + (prefs[k] ? " on." : " off."));
+        });
+      });
+      $("size-down").addEventListener("click", function () { if (prefs.size > 0) { prefs.size--; change(); } });
+      $("size-up").addEventListener("click", function () { if (prefs.size < P.SIZES.length - 1) { prefs.size++; change(); } });
+      $("a11y-reset").addEventListener("click", function () {
+        stopSpeak(); P.clear(); prefs = P.load(); sync(); toast("Accessibility settings reset.");
+      });
+
+      /* Read page aloud (browser speech, no extra files) */
+      const speakBtn = $("speak-btn");
+      const canSpeak = "speechSynthesis" in window && "SpeechSynthesisUtterance" in window;
+      let speaking = false;
+      function stopSpeak() {
+        if (canSpeak) speechSynthesis.cancel();
+        speaking = false;
+        speakBtn.textContent = "Read page aloud";
+      }
+      if (!canSpeak) speakBtn.hidden = true;
+      speakBtn.addEventListener("click", function () {
+        if (speaking) { stopSpeak(); return; }
+        const sec = document.querySelector(".page.active");
+        const lines = sec.innerText.split(/\n+/).map((t) => t.replace(/\s+/g, " ").trim()).filter(Boolean);
+        speechSynthesis.cancel();
+        lines.forEach(function (t, i) {
+          const u = new SpeechSynthesisUtterance(t);
+          u.lang = document.documentElement.lang || "en";
+          if (i === lines.length - 1) u.onend = stopSpeak;
+          speechSynthesis.speak(u);
+        });
+        speaking = true;
+        speakBtn.textContent = "Stop reading";
+      });
+      window.addEventListener("hashchange", stopSpeak);
+
+      /* Log out: back to the login page */
+      $("logout-btn").addEventListener("click", function () {
+        stopSpeak();
+        closePanel(false);
+        closeMenu();
+        if (detail.open) detail.close();
+        try { sessionStorage.removeItem("bb-auth"); } catch (err) {}
+        document.documentElement.setAttribute("data-auth", "out");
+        location.hash = "dashboard";
+        document.title = "Log in \u2013 Blood Bank";
+        $("login-user").focus();
+      });
+
+      render();
+      resetDates();
+      sync();
+      show(location.hash.slice(1));
+    })();
+
+    </script>
+    <script src="assets/js/about.js"></script>
+    <script src="assets/js/dashboard.js"></script>
+    <script src="assets/js/database.js"></script>
+  </body>
+</html>

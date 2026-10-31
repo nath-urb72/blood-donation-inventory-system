@@ -445,6 +445,8 @@
     }
     .login-error[hidden] { display: none; }
     .login-card .btn { width: 100%; padding: 14px 24px; }
+    [hidden] { display: none !important; }      /* lets "hidden" win over display:grid */
+    .status.expired { color: var(--danger); }
 
     /* ============ RESPONSIVE ============ */
     @media (max-width: 900px) {
@@ -684,8 +686,9 @@
             <fieldset class="entry-fields">
               <legend>Donor details</legend>
               <div class="form-grid">
-                <label>Full name<input type="text" name="name" required placeholder="e.g. Juan Dela Cruz"></label>
-                <label>Blood type<select name="type" required><option value="">Select</option><option>A+</option><option>A-</option><option>B+</option><option>B-</option><option>AB+</option><option>AB-</option><option>O+</option><option>O-</option></select></label>
+                <label>Donor<select name="donor" id="entry-donor" data-donor-select data-allow-new></select></label>
+                <label data-new-donor-only>Full name<input type="text" name="name" required maxlength="100" placeholder="e.g. Juan Dela Cruz"></label>
+                <label data-new-donor-only>Blood type<select name="type" required><option value="">Select</option><option>A+</option><option>A-</option><option>B+</option><option>B-</option><option>AB+</option><option>AB-</option><option>O+</option><option>O-</option></select></label>
               </div>
             </fieldset>
             <fieldset class="entry-fields">
@@ -717,7 +720,6 @@
             <div class="form-grid">
               <label>Full name<input type="text" name="name" required placeholder="e.g. Juan Dela Cruz"></label>
               <label>Blood type<select name="type" required><option value="">Select</option><option>A+</option><option>A-</option><option>B+</option><option>B-</option><option>AB+</option><option>AB-</option><option>O+</option><option>O-</option></select></label>
-              <label>Last donation<input type="date" name="last" required></label>
             </div>
             <div class="dialog-actions">
               <a class="btn btn-ghost" href="#database">Cancel</a>
@@ -741,7 +743,7 @@
               <label>donor_id (foreign key)<select name="donor" required data-donor-select></select></label>
               <label>Component<select name="comp"><option>Red cells</option><option>Plasma</option><option>Platelets</option></select></label>
               <label>Date collected<input type="date" name="date" required></label>
-              <label>Status<select name="status"><option>Stored</option><option>Testing</option></select></label>
+              <label>Status<select name="status"><option>Stored</option><option>Testing</option><option>Expired</option><option>Used</option></select></label>
             </div>
             <div class="dialog-actions">
               <a class="btn btn-ghost" href="#bags">Cancel</a>
@@ -904,24 +906,39 @@
       let donors = [];
     let bags = [];
 
-    // Fetch data from PHP
+    // Fetch data from PHP (requires a logged-in session)
     async function loadData() {
       try {
         const response = await fetch('backend/api.php?action=get_data');
+        if (response.status === 401) { setAuth(false); return; }
         const data = await response.json();
+        if (!data.success) throw new Error(data.error || 'Request failed');
         donors = data.donors;
         bags = data.bags;
-        
-        // Call your existing render function to update the tables
-        render(); 
+        render();
       } catch (error) {
         console.error('Error fetching data:', error);
         toast('Failed to load database.');
       }
     }
 
-    // Call loadData() when the page loads
-    loadData();
+    // The server, not the browser, decides who is logged in
+    function setAuth(on) {
+      try { if (on) sessionStorage.setItem("bb-auth", "1"); else sessionStorage.removeItem("bb-auth"); } catch (e) {}
+      document.documentElement.setAttribute("data-auth", on ? "in" : "out");
+      if (on) {
+        loadData();
+        if (window.BloodBankDashboard) BloodBankDashboard.refresh();
+      }
+    }
+    async function checkSession() {
+      try {
+        const res = await fetch('backend/api.php?action=check_session');
+        const d = await res.json();
+        setAuth(!!d.logged_in);
+      } catch (e) { setAuth(false); }
+    }
+    checkSession();
       const listFor = (type) => (type === "donor" ? donors : bags);
       const $ = (id) => document.getElementById(id);
       const esc = (v) => String(v).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -947,19 +964,34 @@
       
       function render() {
         $("donor-rows").innerHTML = donors.map((d) =>
-          `<tr><td>${d.id}</td><td>${esc(d.name)}</td><td><span class="tag">${d.type}</span></td><td>${fmt(d.last)}</td>${dots("donor", d.id)}</tr>`
+          `<tr><td>${esc(d.id)}</td><td>${esc(d.name)}</td><td><span class="tag">${esc(d.type)}</span></td><td>${d.last ? fmt(d.last) : "\u2014"}</td>${dots("donor", d.id)}</tr>`
         ).join("") || '<tr><td colspan="5" class="empty">No donors yet. Use + New Entry to add one.</td></tr>';
-        $("bag-rows").innerHTML = bags.map((b) => {
-          const d = donors.find((x) => x.id === b.donor);
-          return `<tr><td>${b.id}</td><td><a class="idlink" href="#database">${b.donor}</a></td><td><span class="tag">${d ? d.type : "?"}</span></td><td>${b.comp}</td><td>${fmt(b.date)}</td><td class="status${b.status === "Testing" ? " pending" : ""}">${b.status}</td>${dots("bag", b.id)}</tr>`;
-        }).join("") || '<tr><td colspan="7" class="empty">No bags yet. Use + New Entry to add one.</td></tr>';
-        /* the donor_id dropdown in the bag forms always lists the current donors */
+
+        $("bag-rows").innerHTML = bags.map((b) =>
+          `<tr><td>${esc(b.id)}</td><td><a class="idlink" href="#database">${esc(b.donor)}</a></td><td><span class="tag">${esc(b.type)}</span></td><td>${esc(b.comp)}</td><td>${fmt(b.date)}</td><td class="status${b.status === "Testing" ? " pending" : ""}${b.status === "Expired" ? " expired" : ""}">${esc(b.status)}</td>${dots("bag", b.id)}</tr>`
+        ).join("") || '<tr><td colspan="7" class="empty">No bags yet. Use + New Entry to add one.</td></tr>';
+
+        /* donor dropdowns (New Entry has an extra "+ New donor" choice) */
         document.querySelectorAll("[data-donor-select]").forEach((sel) => {
           const keep = sel.value;
-          sel.innerHTML = donors.map((d) => `<option value="${d.id}">${d.id} - ${esc(d.name)}</option>`).join("");
+          const first = sel.hasAttribute("data-allow-new") ? '<option value="">+ New donor</option>' : "";
+          sel.innerHTML = first + donors.map((d) => `<option value="${esc(d.id)}">${esc(d.id)} - ${esc(d.name)}</option>`).join("");
           if (keep) sel.value = keep;
         });
+        syncEntryDonor();
       }
+
+/* New Entry: hide + disable name/type when an existing donor is chosen */
+function syncEntryDonor() {
+  const sel = document.getElementById("entry-donor");
+  if (!sel) return;
+  const isNew = sel.value === "";
+  document.querySelectorAll("[data-new-donor-only]").forEach((el) => {
+    el.hidden = !isNew;
+    el.querySelectorAll("input, select").forEach((c) => { c.disabled = !isNew; });
+  });
+}
+document.getElementById("entry-donor").addEventListener("change", syncEntryDonor);
 
       /* ----- 3-dots menu on every row: Edit / Delete ----- */
       const menu = $("row-menu");
@@ -1014,63 +1046,61 @@
 
       /* ----- Forms: New Entry and Edit share the same save logic ----- */
     document.querySelectorAll(".entry-form").forEach(function (f) {
-        f.addEventListener("submit", async function (e) {
-          e.preventDefault();
-          const type = f.dataset.type;
-          const mode = f.dataset.mode;
-          const formData = new FormData(f);
+      f.addEventListener("submit", async function (e) {
+        e.preventDefault();
+        const type = f.dataset.type;      // "entry", "donor" or "bag"
+        const mode = f.dataset.mode;      // "new" or "edit"
+        const action = type === "entry" ? "add_entry" : "edit_" + type;
+        const formData = new FormData(f);
+        if (mode === "edit" && editing) formData.append("id", editing.id);
 
-          if (mode === "edit" && editing && editing.id) {
-            formData.append("id", editing.id);
-          }
+        try {
+          const response = await fetch("backend/api.php?action=" + action, { method: "POST", body: formData });
+          if (response.status === 401) { setAuth(false); return; }
+          const result = await response.json();
+          if (!result.success) { toast(result.error || "Error saving entry."); return; }
 
-          try {
-            const response = await fetch(`backend/api.php?action=add_${type}`, {
-              method: 'POST',
-              body: formData
-            });
-            
-            const result = await response.json();
-            
-            if (result.success) {
-              toast("Entry saved successfully.");
-              f.reset();
-              resetDates();
-              editing = null;
-              
-              await loadData();
-              location.hash = (type === "donor" || type === "entry") ? "database" : "bags";
-            } else {
-              toast(result.error || "Error saving entry.");
-            }
-          } catch (error) {
-            console.error("Submission Error:", error);
-            toast("Error saving entry: " + error.message);
-          }
-        });
+          toast("Entry saved successfully.");
+          f.reset();
+          resetDates();
+          syncEntryDonor();
+          editing = null;
+          await loadData();
+          location.hash = type === "bag" ? "bags" : "database";
+        } catch (error) {
+          console.error("Submission Error:", error);
+          toast("Error saving entry: " + error.message);
+        }
       });
+    });
 
       /* ===== Admin login ===== */
       const loginForm = $("login-form"), loginErr = $("login-error"), loginPass = $("login-pass");
       $("login-show").addEventListener("change", function (e) { loginPass.type = e.target.checked ? "text" : "password"; });
-      loginForm.addEventListener("submit", function (e) {
-        e.preventDefault();
-        const user = $("login-user").value.trim();
-        if (user === "admin" && loginPass.value === "bloodbank.admin") {
-          try { sessionStorage.setItem("bb-auth", "1"); } catch (err) {}
-          document.documentElement.setAttribute("data-auth", "in");
-          loginForm.reset();
-          loginPass.type = "password";
-          loginErr.hidden = true;
-          show(location.hash.slice(1));
-          $("main").focus();
-        } else {
-          loginErr.textContent = "Incorrect username or password. Please try again.";
-          loginErr.hidden = false;
-          loginPass.value = "";
-          loginPass.focus();
-        }
-      });
+      loginForm.addEventListener("submit", async function (e) {
+  e.preventDefault();
+  let ok = false, msg = "Could not reach the server. Is PHP running?";
+  try {
+    const res = await fetch("backend/login_action.php", { method: "POST", body: new FormData(loginForm) });
+    const result = await res.json();
+    ok = !!result.success;
+    if (!ok) msg = result.error || "Incorrect username or password. Please try again.";
+  } catch (err) { console.error(err); }
+
+  if (ok) {
+    loginForm.reset();
+    loginPass.type = "password";
+    loginErr.hidden = true;
+    setAuth(true);
+    show(location.hash.slice(1));
+    $("main").focus();
+  } else {
+    loginErr.textContent = msg;
+    loginErr.hidden = false;
+    loginPass.value = "";
+    loginPass.focus();
+  }
+});
       if (document.documentElement.getAttribute("data-auth") === "out") $("login-user").focus();
 
       /* ===== Theme toggle + Accessibility menu ===== */
@@ -1157,13 +1187,14 @@
       window.addEventListener("hashchange", stopSpeak);
 
       /* Log out: back to the login page */
-      $("logout-btn").addEventListener("click", function () {
+      $("logout-btn").addEventListener("click", async function () {
         stopSpeak();
         closePanel(false);
         closeMenu();
         if (detail.open) detail.close();
-        try { sessionStorage.removeItem("bb-auth"); } catch (err) {}
-        document.documentElement.setAttribute("data-auth", "out");
+        try { await fetch("backend/logout.php", { method: "POST" }); } catch (err) {}
+        donors = []; bags = []; render();          // clear data from the page
+        setAuth(false);
         location.hash = "dashboard";
         document.title = "Log in \u2013 Blood Bank";
         $("login-user").focus();

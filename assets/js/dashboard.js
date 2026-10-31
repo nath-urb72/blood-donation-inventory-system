@@ -10,8 +10,9 @@
 
   // Sample data restored
   var data = {
-    types: { "A+": 47, "A-": 10, "B+": 33, "B-": 8, "AB+": 7, "AB-": 3, "O+": 50, "O-": 9 },
-    components: { "Red cells": 92, "Plasma": 48, "Platelets": 27 }
+    types: { "A+": 0, "A-": 0, "B+": 0, "B-": 0, "AB+": 0, "AB-": 0, "O+": 0, "O-": 0 },
+    components: { "Red cells": 0, "Plasma": 0, "Platelets": 0 },
+    total: 0
   };
 
   var COMP_INFO = {
@@ -110,6 +111,9 @@
 
   function drawTypes(animate) {
     var total = sum(data.types);
+    var maxShare = Math.max(1, Math.max.apply(null, ORDER.map(function (l) { return pct(data.types[l] || 0, total); })));
+    function barValue(label) { return String(pct(data.types[label] || 0, total) / maxShare * 32); }
+
     ORDER.forEach(function (label) {
       var col = colByType[label];
       if (!col) return;
@@ -119,15 +123,14 @@
       $(".bar-pct", col).textContent = share + "%";
       bar.classList.toggle("is-low", share < LOW_SHARE);
       col.dataset.tip = label + ": " + n + " bags";
-      if (animate) bar.style.setProperty("--v", "0");
-      else bar.style.setProperty("--v", String(share));
+      bar.style.setProperty("--v", animate ? "0" : barValue(label));
     });
     if (animate) {
       void chart.offsetWidth;
       requestAnimationFrame(function () {
         ORDER.forEach(function (label) {
           var col = colByType[label];
-          if (col) $(".bar", col).style.setProperty("--v", String(pct(data.types[label] || 0, total)));
+          if (col) $(".bar", col).style.setProperty("--v", barValue(label));
         });
       });
     }
@@ -193,7 +196,7 @@
   var countTimer = null;
 
   function drawTotal(animate) {
-    var target = sum(data.types);
+    var target = data.total;
     cancelAnimationFrame(countTimer);
     if (!animate || reduceMotion()) { bigText.nodeValue = String(target); return; }
     var start = null, dur = 900;
@@ -257,34 +260,27 @@
   function fetchStatsAndRender() {
     fetch('backend/api.php?action=get_stats')
       .then(function (res) {
-        if (!res.ok) throw new Error("API Status: " + res.status);
+        if (!res.ok) throw new Error("API status: " + res.status);
         return res.json();
       })
       .then(function (stats) {
-        var hasRealTypeData = stats && stats.types && Object.values(stats.types).some(function(v) { return Number(v) > 0; });
-        var hasRealCompData = stats && stats.components && Object.values(stats.components).some(function(v) { return Number(v) > 0; });
-
-        if (hasRealTypeData) {
-          ORDER.forEach(function (k) { data.types[k] = Number(stats.types[k]) || 0; });
-        }
-        if (hasRealCompData) {
-          compNames.forEach(function (k) { data.components[k] = Number(stats.components[k]) || 0; });
-        }
-
+        if (!stats || !stats.success) throw new Error("Stats unavailable");
+        ORDER.forEach(function (k) { data.types[k] = Number(stats.types[k]) || 0; });
+        compNames.forEach(function (k) { data.components[k] = Number(stats.components[k]) || 0; });
+        data.total = Number(stats.total) || 0;
         var animate = !reduceMotion();
         drawTypes(animate);
         drawComponents(animate);
         drawTotal(true);
       })
       .catch(function (err) {
-        console.warn("Using sample dashboard data:", err);
-        drawTypes(false);
-        drawComponents(false);
-        drawTotal(false);
+        console.warn("Could not load stats:", err);
+        drawTypes(false); drawComponents(false); drawTotal(false);
       });
   }
 
   window.BloodBankDashboard = {
+    refresh: fetchStatsAndRender,
     update: function (next) {
       if (next && next.types) ORDER.forEach(function (k) { if (k in next.types) data.types[k] = Number(next.types[k]) || 0; });
       if (next && next.components) compNames.forEach(function (k) { if (k in next.components) data.components[k] = Number(next.components[k]) || 0; });

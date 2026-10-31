@@ -1,206 +1,190 @@
 <?php
-// api.php - Universal API Router (Updated with Direct Blood Type Mapping)
-error_reporting(0);
-ini_set('display_errors', 0);
+// CHANGED
+// backend/api.php
+error_reporting(E_ALL);
+ini_set('display_errors', '0');      // errors go to the PHP log, not the browser
 header('Content-Type: application/json');
 
+session_set_cookie_params(['httponly' => true, 'samesite' => 'Lax']);
 session_start();
+require_once __DIR__ . '/../config/db_connect.php';
 
-require_once __DIR__ . '/config/db_connect.php';
+const TYPES      = ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'];
+const COMPONENTS = ['Red cells', 'Plasma', 'Platelets'];
+const STATUSES   = ['Stored', 'Testing', 'Expired', 'Used'];
 
-$inputJSON = json_decode(file_get_contents('php://input'), true) ?? [];
-$request = array_merge($_POST, $_GET, $inputJSON);
+/* ---------- helpers ---------- */
+function respond(array $payload, int $code = 200): void {
+    http_response_code($code);
+    echo json_encode($payload);
+    exit;
+}
+function fail(string $msg, int $code = 400): void {
+    respond(['success' => false, 'error' => $msg], $code);
+}
+function numId($raw): int {                  // "D-001" -> 1
+    return (int) preg_replace('/\D/', '', (string) $raw);
+}
+function validDate(string $d): bool {
+    $dt = DateTime::createFromFormat('Y-m-d', $d);
+    return $dt !== false && $dt->format('Y-m-d') === $d;
+}
+function cleanDonor(array $b): array {
+    $name = trim($b['name'] ?? '');
+    $type = trim($b['type'] ?? '');
+    if ($name === '' || strlen($name) > 100) fail('Enter a donor name (max 100 characters).');
+    if (!in_array($type, TYPES, true))       fail('Invalid blood type.');
+    return [$name, $type];
+}
+function cleanBag(array $b): array {
+    $comp   = trim($b['comp'] ?? '');
+    $status = trim($b['status'] ?? 'Stored');
+    $date   = trim($b['date'] ?? '');
+    if (!in_array($comp, COMPONENTS, true)) fail('Invalid component.');
+    if (!in_array($status, STATUSES, true)) fail('Invalid status.');
+    if (!validDate($date))                  fail('Invalid collection date.');
+    if ($date > date('Y-m-d'))              fail('Collection date cannot be in the future.');
+    return [$comp, $status, $date];
+}
+function donorExists(PDO $pdo, int $id): bool {
+    $s = $pdo->prepare('SELECT 1 FROM donors WHERE id = ? AND is_deleted = 0');
+    $s->execute([$id]);
+    return (bool) $s->fetchColumn();
+}
 
-$action = $request['action'] ?? '';
+/* ---------- request ---------- */
+$method = $_SERVER['REQUEST_METHOD'];
+$body   = $method === 'POST' ? $_POST : [];
+$action = $_GET['action'] ?? '';
+$id     = $body['id'] ?? $_GET['id'] ?? '';
 
-// Auto-expire maintenance
+// Public action: lets the page ask "am I logged in?"
+if ($action === 'check_session') {
+    respond(['success' => true, 'logged_in' => !empty($_SESSION['user_id'])]);
+}
+
+// Everything below needs a logged-in admin
+if (empty($_SESSION['user_id'])) fail('Please log in first.', 401);
+
+// Anything that changes data must be a POST
+$writes = ['add_entry', 'edit_donor', 'edit_bag', 'delete_donor', 'delete_bag'];
+if (in_array($action, $writes, true) && $method !== 'POST') fail('This action requires POST.', 405);
+
 try {
-    $pdo->exec("UPDATE blood_bags SET status = 'Expired' WHERE status = 'Stored' AND date(expiry_date) < date('now')");
-} catch (Exception $e) {}
+    // Auto-expire bags past their expiry date
+    $pdo->prepare("UPDATE blood_bags SET status = 'Expired'
+                   WHERE status IN ('Stored', 'Testing') AND expiry_date < ?")
+        ->execute([date('Y-m-d')]);
 
-// 1. Fetch Donors & Bags
-if ($action === 'get_data' || ($_SERVER['REQUEST_METHOD'] === 'GET' && empty($action))) {
-    try {
-        $donorRows = $pdo->query("SELECT * FROM donors WHERE is_deleted = 0 ORDER BY id DESC")->fetchAll(PDO::FETCH_ASSOC);
-        $donors = array_map(function($d) {
-            return [
-                'id'    => 'D-' . str_pad($d['id'], 3, '0', STR_PAD_LEFT),
-                'db_id' => (int)$d['id'],
-                'name'  => $d['name'] ?: trim(($d['first_name'] ?? '') . ' ' . ($d['last_name'] ?? '')),
-                'type'  => $d['blood_type'] ?: $d['type'] ?: 'O+',
-                'last'  => $d['last_donation'] ?: date('Y-m-d')
-            ];
-        }, $donorRows);
+    switch ($action) {
 
-        $bagRows = $pdo->query("
-            SELECT b.*, d.blood_type as donor_blood_type 
-            FROM blood_bags b 
-            LEFT JOIN donors d ON b.donor_id = d.id 
-            WHERE b.is_deleted = 0 
-            ORDER BY b.id DESC
-        ")->fetchAll(PDO::FETCH_ASSOC);
+        case 'get_data':
+            $donorRows = $pdo->query("
+                SELECT d.id, d.name, d.blood_type,
+                       (SELECT MAX(b.collection_date) FROM blood_bags b
+                         WHERE b.donor_id = d.id AND b.is_deleted = 0) AS last_donation
+                FROM donors d WHERE d.is_deleted = 0 ORDER BY d.id DESC")->fetchAll();
+            $donors = array_map(fn($d) => [
+                'id'   => 'D-' . str_pad((string) $d['id'], 3, '0', STR_PAD_LEFT),
+                'name' => $d['name'],
+                'type' => $d['blood_type'],
+                'last' => $d['last_donation'],     // null if the donor has no bags
+            ], $donorRows);
 
-        $bags = array_map(function($b) {
-            return [
-                'id'     => 'B-' . str_pad($b['id'], 4, '0', STR_PAD_LEFT),
-                'db_id'  => (int)$b['id'],
-                'donor'  => 'D-' . str_pad($b['donor_id'], 3, '0', STR_PAD_LEFT),
-                'type'   => $b['blood_type'] ?: $b['donor_blood_type'] ?: 'O+',
-                'comp'   => $b['component'] ?: 'Red cells',
-                'date'   => $b['collection_date'] ?: date('Y-m-d'),
-                'status' => $b['status'] ?: 'Stored'
-            ];
-        }, $bagRows);
+            $bagRows = $pdo->query("
+                SELECT b.id, b.donor_id, b.component, b.collection_date, b.status, d.blood_type
+                FROM blood_bags b JOIN donors d ON d.id = b.donor_id
+                WHERE b.is_deleted = 0 ORDER BY b.id DESC")->fetchAll();
+            $bags = array_map(fn($b) => [
+                'id'     => 'B-' . str_pad((string) $b['id'], 4, '0', STR_PAD_LEFT),
+                'donor'  => 'D-' . str_pad((string) $b['donor_id'], 3, '0', STR_PAD_LEFT),
+                'type'   => $b['blood_type'],
+                'comp'   => $b['component'],
+                'date'   => $b['collection_date'],
+                'status' => $b['status'],
+            ], $bagRows);
 
-        echo json_encode(['success' => true, 'donors' => $donors, 'bags' => $bags]);
-    } catch (Exception $e) {
-        http_response_code(500);
-        echo json_encode(['success' => false, 'error' => $e->getMessage()]);
+            respond(['success' => true, 'donors' => $donors, 'bags' => $bags]);
+
+        case 'add_entry':   // new donor + bag, OR a bag for an existing donor
+            [$comp, $status, $date] = cleanBag($body);
+            $donorRef = trim($body['donor'] ?? '');
+            if ($donorRef === '') {
+                [$name, $type] = cleanDonor($body);
+            } else {
+                $donorId = numId($donorRef);
+                if (!donorExists($pdo, $donorId)) fail('Donor not found.', 404);
+            }
+
+            $pdo->beginTransaction();
+            if ($donorRef === '') {
+                $pdo->prepare('INSERT INTO donors (name, blood_type) VALUES (?, ?)')->execute([$name, $type]);
+                $donorId = (int) $pdo->lastInsertId();
+            }
+            $pdo->prepare('INSERT INTO blood_bags (donor_id, component, status, collection_date, expiry_date)
+                           VALUES (?, ?, ?, ?, ?)')
+                ->execute([$donorId, $comp, $status, $date, expiry_for($comp, $date)]);
+            $pdo->commit();
+            respond(['success' => true]);
+
+        case 'edit_donor':
+            [$name, $type] = cleanDonor($body);
+            $st = $pdo->prepare('UPDATE donors SET name = ?, blood_type = ? WHERE id = ? AND is_deleted = 0');
+            $st->execute([$name, $type, numId($id)]);
+            if ($st->rowCount() === 0) fail('Donor not found.', 404);
+            respond(['success' => true]);
+
+        case 'edit_bag':
+            [$comp, $status, $date] = cleanBag($body);
+            $donorId = numId($body['donor'] ?? '');
+            if (!donorExists($pdo, $donorId)) fail('Donor not found.', 404);
+            $st = $pdo->prepare('UPDATE blood_bags
+                                 SET donor_id = ?, component = ?, status = ?, collection_date = ?, expiry_date = ?
+                                 WHERE id = ? AND is_deleted = 0');
+            $st->execute([$donorId, $comp, $status, $date, expiry_for($comp, $date), numId($id)]);
+            if ($st->rowCount() === 0) fail('Bag not found.', 404);
+            respond(['success' => true]);
+
+        case 'delete_donor':   // soft delete: donor and all of their bags
+            $did = numId($id);
+            $pdo->beginTransaction();
+            $st = $pdo->prepare('UPDATE donors SET is_deleted = 1 WHERE id = ? AND is_deleted = 0');
+            $st->execute([$did]);
+            if ($st->rowCount() === 0) { $pdo->rollBack(); fail('Donor not found.', 404); }
+            $pdo->prepare('UPDATE blood_bags SET is_deleted = 1 WHERE donor_id = ?')->execute([$did]);
+            $pdo->commit();
+            respond(['success' => true]);
+
+        case 'delete_bag':
+            $st = $pdo->prepare('UPDATE blood_bags SET is_deleted = 1 WHERE id = ? AND is_deleted = 0');
+            $st->execute([numId($id)]);
+            if ($st->rowCount() === 0) fail('Bag not found.', 404);
+            respond(['success' => true]);
+
+        case 'get_stats':
+            $types      = array_fill_keys(TYPES, 0);
+            $components = array_fill_keys(COMPONENTS, 0);
+
+            foreach ($pdo->query("SELECT d.blood_type AS k, COUNT(*) AS n
+                                  FROM blood_bags b JOIN donors d ON d.id = b.donor_id
+                                  WHERE b.status = 'Stored' AND b.is_deleted = 0
+                                  GROUP BY d.blood_type") as $r) {
+                $types[$r['k']] = (int) $r['n'];
+            }
+            foreach ($pdo->query("SELECT component AS k, COUNT(*) AS n FROM blood_bags
+                                  WHERE status = 'Stored' AND is_deleted = 0
+                                  GROUP BY component") as $r) {
+                $components[$r['k']] = (int) $r['n'];
+            }
+            $total = (int) $pdo->query('SELECT COUNT(*) FROM blood_bags WHERE is_deleted = 0')->fetchColumn();
+
+            respond(['success' => true, 'types' => $types, 'components' => $components, 'total' => $total]);
+
+        default:
+            fail('Unknown action.', 404);
     }
-    exit;
+} catch (Throwable $e) {
+    if ($pdo->inTransaction()) $pdo->rollBack();
+    error_log('[api] ' . $e->getMessage());
+    fail('Server error. Please try again.', 500);
 }
-
-// 2. Add New Entry
-if ($action === 'add_entry' || $action === 'add_unified_entry') {
-    try {
-        $pdo->beginTransaction();
-
-        $fullName  = trim($request['name'] ?? $request['full_name'] ?? 'Anonymous Donor');
-        $bloodType = trim($request['type'] ?? $request['blood_type'] ?? 'O+');
-        $component = trim($request['comp'] ?? $request['component'] ?? 'Red cells');
-        $dateColl  = trim($request['date'] ?? $request['collection_date'] ?? date('Y-m-d'));
-        $status    = trim($request['status'] ?? 'Stored');
-
-        $nameParts = explode(' ', $fullName, 2);
-        $firstName = $nameParts[0];
-        $lastName  = $nameParts[1] ?? 'Donor';
-
-        $baseTime = strtotime($dateColl) ?: time();
-        if ($component === 'Platelets') {
-            $expiry = date('Y-m-d', strtotime('+5 days', $baseTime));
-        } elseif ($component === 'Plasma') {
-            $expiry = date('Y-m-d', strtotime('+365 days', $baseTime));
-        } else {
-            $expiry = date('Y-m-d', strtotime('+35 days', $baseTime));
-        }
-
-        $stmtDonor = $pdo->prepare("
-            INSERT INTO donors (name, first_name, last_name, blood_type, type, last_donation) 
-            VALUES (?, ?, ?, ?, ?, ?)
-        ");
-        $stmtDonor->execute([$fullName, $firstName, $lastName, $bloodType, $bloodType, $dateColl]);
-        $donorId = $pdo->lastInsertId();
-
-        $stmtBag = $pdo->prepare("
-            INSERT INTO blood_bags (donor_id, blood_type, type, component, volume_ml, status, collection_date, expiry_date) 
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        ");
-        $stmtBag->execute([$donorId, $bloodType, $bloodType, $component, 450, $status, $dateColl, $expiry]);
-
-        $pdo->commit();
-
-        echo json_encode(['success' => true]);
-    } catch (Exception $e) {
-        if ($pdo->inTransaction()) {
-            $pdo->rollBack();
-        }
-        http_response_code(500);
-        echo json_encode(['success' => false, 'error' => $e->getMessage()]);
-    }
-    exit;
-}
-
-// 3. Edit Existing Donor or Bag
-if ($action === 'add_donor' || $action === 'edit_donor') {
-    try {
-        $rawId     = $request['id'] ?? '';
-        $numericId = (int)preg_replace('/\D/', '', $rawId);
-        $name      = trim($request['name'] ?? 'Anonymous');
-        $type      = trim($request['type'] ?? 'O+');
-        $last      = trim($request['last'] ?? date('Y-m-d'));
-
-        if ($numericId > 0) {
-            $stmt = $pdo->prepare("UPDATE donors SET name = ?, blood_type = ?, type = ?, last_donation = ? WHERE id = ?");
-            $stmt->execute([$name, $type, $type, $last, $numericId]);
-        } else {
-            $stmt = $pdo->prepare("INSERT INTO donors (name, blood_type, type, last_donation) VALUES (?, ?, ?, ?)");
-            $stmt->execute([$name, $type, $type, $last]);
-        }
-        echo json_encode(['success' => true]);
-    } catch (Exception $e) {
-        http_response_code(500);
-        echo json_encode(['success' => false, 'error' => $e->getMessage()]);
-    }
-    exit;
-}
-
-if ($action === 'add_bag' || $action === 'edit_bag') {
-    try {
-        $rawBagId   = $request['id'] ?? '';
-        $numBagId   = (int)preg_replace('/\D/', '', $rawBagId);
-        $rawDonorId = $request['donor'] ?? '';
-        $numDonorId = (int)preg_replace('/\D/', '', $rawDonorId);
-        $component  = trim($request['comp'] ?? 'Red cells');
-        $date       = trim($request['date'] ?? date('Y-m-d'));
-        $status     = trim($request['status'] ?? 'Stored');
-
-        if ($numBagId > 0) {
-            $stmt = $pdo->prepare("UPDATE blood_bags SET donor_id = ?, component = ?, collection_date = ?, status = ? WHERE id = ?");
-            $stmt->execute([$numDonorId, $component, $date, $status, $numBagId]);
-        }
-        echo json_encode(['success' => true]);
-    } catch (Exception $e) {
-        http_response_code(500);
-        echo json_encode(['success' => false, 'error' => $e->getMessage()]);
-    }
-    exit;
-}
-
-// 4. Delete Handlers
-if ($action === 'delete_donor' || $action === 'delete_bag') {
-    try {
-        $formattedId = $request['id'] ?? '';
-        $rawNum = (int)preg_replace('/\D/', '', $formattedId);
-
-        if ($action === 'delete_donor') {
-            $stmt = $pdo->prepare("UPDATE donors SET is_deleted = 1 WHERE id = ?");
-            $stmt->execute([$rawNum]);
-            $stmtBags = $pdo->prepare("UPDATE blood_bags SET is_deleted = 1 WHERE donor_id = ?");
-            $stmtBags->execute([$rawNum]);
-        } else {
-            $stmt = $pdo->prepare("UPDATE blood_bags SET is_deleted = 1 WHERE id = ?");
-            $stmt->execute([$rawNum]);
-        }
-
-        echo json_encode(['success' => true]);
-    } catch (Exception $e) {
-        http_response_code(500);
-        echo json_encode(['success' => false, 'error' => $e->getMessage()]);
-    }
-    exit;
-}
-
-// 5. Dashboard Statistics
-if ($action === 'get_stats') {
-    try {
-        $types = ["A+" => 0, "A-" => 0, "B+" => 0, "B-" => 0, "AB+" => 0, "AB-" => 0, "O+" => 0, "O-" => 0];
-        $components = ["Red cells" => 0, "Plasma" => 0, "Platelets" => 0];
-
-        $typeRows = $pdo->query("SELECT blood_type, COUNT(*) as total FROM blood_bags WHERE status = 'Stored' AND is_deleted = 0 GROUP BY blood_type")->fetchAll(PDO::FETCH_ASSOC);
-        foreach ($typeRows as $row) {
-            if (isset($types[$row['blood_type']])) $types[$row['blood_type']] = (int)$row['total'];
-        }
-
-        $compRows = $pdo->query("SELECT component, COUNT(*) as total FROM blood_bags WHERE status = 'Stored' AND is_deleted = 0 GROUP BY component")->fetchAll(PDO::FETCH_ASSOC);
-        foreach ($compRows as $row) {
-            if (isset($components[$row['component']])) $components[$row['component']] = (int)$row['total'];
-        }
-
-        echo json_encode(['success' => true, 'types' => $types, 'components' => $components]);
-    } catch (Exception $e) {
-        http_response_code(500);
-        echo json_encode(['success' => false, 'error' => $e->getMessage()]);
-    }
-    exit;
-}
-?>

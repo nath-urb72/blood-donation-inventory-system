@@ -1,8 +1,8 @@
 <?php
-// logout.php
+// backend/logout.php
+header('Content-Type: application/json');
+session_set_cookie_params(['httponly' => true, 'samesite' => 'Lax']);
 session_start();
-session_unset();
+$_SESSION = [];
 session_destroy();
-header("Location: ../index.html");
-exit();
-?>
+echo json_encode(['success' => true]);
